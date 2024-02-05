@@ -594,8 +594,8 @@ if __name__ == "__main__":
 
         # ! NOTE: Uncomment the max_episodes line below to change the number of training episodes. ! #
         # It is deliberately set low to allow testing to ensure this tutorial is sound.
-        max_episodes = 10
-        #max_episodes = LESSON["max_train_episodes"]  # Total episodes
+        #max_episodes = 10
+        max_episodes = LESSON["max_train_episodes"]  # Total episodes
 
         max_steps = 500  # Maximum steps to take in each episode
         evo_epochs = 20  # Evolution frequency
@@ -636,8 +636,8 @@ if __name__ == "__main__":
                 print("Warming up agents ...")
                 agent = pop[0]
                 # Train on randomly collected samples
-                #for epoch in trange(LESSON["agent_warm_up"]):
-                for epoch in trange(20):
+                for epoch in trange(LESSON["agent_warm_up"]):
+                #for epoch in trange(20):
                     experiences = memory.sample(agent.batch_size)
                     agent.learn(experiences)
                 pop = [agent.clone() for _ in pop]
