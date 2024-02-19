@@ -109,7 +109,7 @@ class raw_env(AECEnv, EzPickle):
 
         action_mask = np.zeros(225,"int8")
         for i in legal_moves:
-            action_mask[i] = int(1)
+            action_mask[i] = 1
 
         return {"observation": observation, "action_mask": action_mask}
 

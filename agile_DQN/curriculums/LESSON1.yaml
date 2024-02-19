@@ -16,7 +16,7 @@ agent_warm_up: 30000  # Number of epochs to warm up agent by training on random 
 block_vert_coef: 4  # How many times more likely to block vertically
 rewards:  # Rewards for different outcomes
     win: 1
-    vertical_win: 0.7
+    vertical_win: 1
     three_in_row: 0.05
     opp_three_in_row: -0.05
     lose: -1
