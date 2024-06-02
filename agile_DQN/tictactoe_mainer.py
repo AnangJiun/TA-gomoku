@@ -12,14 +12,14 @@ import numpy as np
 import torch
 import wandb
 import yaml
-from pettingzoo.classic import tictactoe_v3
+from custom_environment.gomoku.env import gomoku
 from tqdm import tqdm, trange
 
 from agilerl.components.replay_buffer import ReplayBuffer
 from agilerl.hpo.mutation import Mutations
 from agilerl.hpo.tournament import TournamentSelection
 from agilerl.utils.utils import initialPopulation
-
+from agilerl.algorithms.dqn import DQN
 
 class CurriculumEnv:
     """Wrapper around environment to modify reward for curriculum learning.
@@ -33,8 +33,8 @@ class CurriculumEnv:
     def __init__(self, env, lesson):
         self.env = env
         self.lesson = lesson
-        self.boardsize = 8
-        self.length = 3
+        self.boardsize = 15**2 - 1
+        self.length = 5
 
     def fill_replay_buffer(self, memory, opponent):
         """Fill the replay buffer with experiences collected by taking random actions in the environment.
@@ -67,16 +67,17 @@ class CurriculumEnv:
 
             while not (done or truncation):
                 # Player 0's turn
-                p0_action_mask = observation["action_mask"]
+                #p0_action_mask64 = np.array([int(i) for i in observation['action_mask']])
+                p0_action_mask8 = observation["action_mask"]
                 p0_state = np.moveaxis(observation["observation"], [-1], [-3])
                 p0_state_flipped = np.expand_dims(np.flip(p0_state, 2), 0)
                 p0_state = np.expand_dims(p0_state, 0)
                 if opponent_first:
-                    p0_action = self.env.action_space("player_0").sample(p0_action_mask)
+                    p0_action = self.env.action_space("player_0").sample(p0_action_mask8)
                 else:
                     if self.lesson["warm_up_opponent"] == "random":
                         p0_action = opponent.getAction(
-                            p0_action_mask, p1_action, self.lesson["block_vert_coef"]
+                            p0_action_mask8, p1_action, self.lesson["block_vert_coef"]
                         )
                     else:
                         p0_action = opponent.getAction(player=0)
@@ -121,19 +122,20 @@ class CurriculumEnv:
                         )
 
                     # Player 1's turn
-                    p1_action_mask = observation["action_mask"]
+                    #p1_action_mask64 = np.array([int(i) for i in observation['action_mask']])
+                    p1_action_mask8 = observation["action_mask"]
                     p1_state = np.moveaxis(observation["observation"], [-1], [-3])
                     p1_state[[0, 1], :, :] = p1_state[[0, 1], :, :]
                     p1_state_flipped = np.expand_dims(np.flip(p1_state, 2), 0)
                     p1_state = np.expand_dims(p1_state, 0)
                     if not opponent_first:
                         p1_action = self.env.action_space("player_1").sample(
-                            p1_action_mask
+                            p1_action_mask8
                         )
                     else:
                         if self.lesson["warm_up_opponent"] == "random":
                             p1_action = opponent.getAction(
-                                p1_action_mask, p0_action, self.lesson["block_vert_coef"]
+                                p1_action_mask8, p0_action, self.lesson["block_vert_coef"]
                             )
                         else:
                             p1_action = opponent.getAction(player=1)
@@ -199,11 +201,11 @@ class CurriculumEnv:
         :param player: Player who we are checking, 0 or 1
         :type player: int
         """
-        board = np.flip(np.array(self.env.env.board.squares).reshape(3,3), 1)
+        board = np.array(self.env.env.board.squares).reshape(15,15)
         piece = player + 1
 
-        column_count = 3
-        row_count = 3
+        column_count = 15
+        row_count = 15
 
         # Check vertical locations for win
         for c in range(column_count):
@@ -212,6 +214,8 @@ class CurriculumEnv:
                     board[r][c] == piece
                     and board[r + 1][c] == piece
                     and board[r + 2][c] == piece
+                    and board[r + 3][c] == piece
+                    and board[r + 4][c] == piece
                 ):
                     return True
         return False
@@ -222,12 +226,12 @@ class CurriculumEnv:
         :param player: Player who we are checking, 0 or 1
         :type player: int
         """
-        board = np.flip(np.array(self.env.env.board.squares).reshape(3,3), 1)
+        board = np.array(self.env.env.board.squares).reshape(15,15)
         piece = player + 1
 
         # Check horizontal locations
-        column_count = 3
-        row_count = 3
+        column_count = 15
+        row_count = 15
         two_in_row_count = 0
 
         # Check vertical locations
@@ -250,6 +254,8 @@ class CurriculumEnv:
                         board[r, c],
                         board[r + 1, c + 1],
                         board[r + 2, c + 2],
+                        board[r + 3, c + 3],
+                        board[r + 4, c + 4],
                     ],
                     piece,
                 ):
@@ -263,6 +269,8 @@ class CurriculumEnv:
                         board[r, c],
                         board[r - 1, c + 1],
                         board[r - 2, c + 2],
+                        board[r - 3, c + 3],
+                        board[r - 4, c + 4],
                     ],
                     piece,
                 ):
@@ -318,9 +326,9 @@ class Opponent:
             self.getAction = self.weak_rule_based_opponent
         else:
             self.getAction = self.strong_rule_based_opponent
-        self.num_rows = 3
-        self.num_cols = 3
-        self.length = 3  # For Tic-Tac-Toe, the winning length is 3 in a row
+        self.num_rows = 15
+        self.num_cols = 15
+        self.length = 5  # For Gomoku, the winning length is 5 in a row
         self.boardsize = self.num_rows * self.num_cols
 
     def random_opponent(self, action_mask, last_opp_move=None, block_vert_coef=1):
@@ -433,7 +441,7 @@ class Opponent:
 
         d0 = np.where(valid_positions, positions[:, :, :, 0], 0)
         d1 = np.where(valid_positions, positions[:, :, :, 1], 0)
-        board = np.flip(np.array(self.env.env.board.squares).reshape(3,3), 1)
+        board = np.array(self.env.env.board.squares).reshape(15,15)
         board_values = np.where(valid_positions, board[d0, d1], 0)
 
         a = (board_values == piece).astype(int)
@@ -458,14 +466,31 @@ class Opponent:
 
         return (True, reward, ended) + ((lengths,) if return_length else ())
 
+def transform_and_flip(observation, player):
+    """Transforms and flips observation for input to agent's neural network.
+
+    :param observation: Observation to preprocess
+    :type observation: dict[str, np.ndarray]
+    :param player: Player, 0 or 1
+    :type player: int
+    """
+    state = observation["observation"]
+    # Pre-process dimensions for PyTorch (N, C, H, W)
+    state = np.moveaxis(state, [-1], [-3])
+    if player == 1:
+        # Swap pieces so that the agent always sees the board from the same perspective
+        state[[0, 1], :, :] = state[[1, 0], :, :]
+    state_flipped = np.expand_dims(np.flip(state, 2), 0)
+    state = np.expand_dims(state, 0)
+    return state, state_flipped
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("===== AgileRL Curriculum Learning Demo =====")
 
-    for lesson_number in range(1, 5):
+    for lesson_number in range(2, 3):
         # Load lesson for curriculum
-        with open(f"/home/anangjiun/tugasakhir/agile_DQN/curriculums/LESSON{lesson_number}.yml") as file:
+        with open(f"/home/anangjiun/tugasakhir/agile_DQN/curriculums/LESSON{lesson_number}.yaml") as file:
             LESSON = yaml.safe_load(file)
 
         # Define the network configuration
@@ -473,7 +498,7 @@ if __name__ == "__main__":
             "arch": "cnn",  # Network architecture
             "h_size": [64, 64],  # Actor hidden size
             "c_size": [128],  # CNN channel size
-            "k_size": [3],  # CNN kernel size
+            "k_size": [5],  # CNN kernel size
             "s_size": [1],  # CNN stride size
             "normalize": False,  # Normalize image from range [0,255] to [0,1]
         }
@@ -503,7 +528,7 @@ if __name__ == "__main__":
         }
 
         # Define the connect four environment
-        env = tictactoe_v3.env()
+        env = gomoku.env()
         env.reset()
 
         # Configure the algo input arguments
@@ -586,8 +611,8 @@ if __name__ == "__main__":
 
         # ! NOTE: Uncomment the max_episodes line below to change the number of training episodes. ! #
         # It is deliberately set low to allow testing to ensure this tutorial is sound.
-        #max_episodes = 10
-        max_episodes = LESSON["max_train_episodes"]  # Total episodes
+        max_episodes = 50
+        #max_episodes = LESSON["max_train_episodes"]  # Total episodes
 
         max_steps = 500  # Maximum steps to take in each episode
         evo_epochs = 20  # Evolution frequency
@@ -629,7 +654,7 @@ if __name__ == "__main__":
                 agent = pop[0]
                 # Train on randomly collected samples
                 for epoch in trange(LESSON["agent_warm_up"]):
-                #for epoch in trange(100):
+                #for epoch in trange(20):
                     experiences = memory.sample(agent.batch_size)
                     agent.learn(experiences)
                 pop = [agent.clone() for _ in pop]
@@ -642,15 +667,15 @@ if __name__ == "__main__":
                     # set the wandb project where this run will be logged
                     project="AgileRL",
                     name="{}-EvoHPO-{}-{}Opposition-CNN-{}".format(
-                        "tictactoe_v3",
+                        "gomoku_v0",
                         INIT_HP["ALGO"],
                         LESSON["opponent"],
                         datetime.now().strftime("%m%d%Y%H%M%S"),
                     ),
                     # track hyperparameters and run metadata
                     config={
-                        "algo": "Evo HPO Rainbow DQN",
-                        "env": "tictactoe_v3",
+                        "algo": "Evo HPO DQN",
+                        "env": "gomoku_v0",
                         "INIT_HP": INIT_HP,
                         "lesson": LESSON,
                     },
@@ -659,7 +684,7 @@ if __name__ == "__main__":
         total_steps = 0
         total_episodes = 0
         pbar = trange(int(max_episodes / episodes_per_epoch))
-        boardsize = 8
+        boardsize = 15**2 - 1
 
         # Training loop
         for idx_epi in pbar:
@@ -667,6 +692,7 @@ if __name__ == "__main__":
             train_actions_hist = [0] * action_dim
             for agent in pop:  # Loop through population
                 for episode in range(episodes_per_epoch):
+                    print("checkpoint 2")
                     env.reset()  # Reset environment at start of episode
                     observation, env_reward, done, truncation, _ = env.last()
 
@@ -695,26 +721,28 @@ if __name__ == "__main__":
                     turns = 0  # Number of turns counter
 
                     for idx_step in range(max_steps):
+                        
                         # Player 0"s turn
-                        p0_action_mask = observation["action_mask"]
-                        p0_state = np.moveaxis(observation["observation"], [-1], [-3])
-                        p0_state_flipped = np.expand_dims(np.flip(p0_state, 2), 0)
-                        p0_state = np.expand_dims(p0_state, 0)
+                        #p0_action_mask64 = np.array([int(i) for i in observation['action_mask']])
+                        p0_action_mask8 = observation["action_mask"]
+                        p0_state, p0_state_flipped = transform_and_flip(
+                            observation, player=0
+                        )
 
                         if opponent_first:
                             if LESSON["opponent"] == "self":
                                 p0_action = opponent.getAction(
-                                    p0_state, 0, p0_action_mask
+                                    p0_state, 0, p0_action_mask8
                                 )[0]
                             elif LESSON["opponent"] == "random":
                                 p0_action = opponent.getAction(
-                                    p0_action_mask, p1_action, LESSON["block_vert_coef"]
+                                    p0_action_mask8, p1_action, LESSON["block_vert_coef"]
                                 )
                             else:
                                 p0_action = opponent.getAction(player=0)
                         else:
                             p0_action = agent.getAction(
-                                p0_state, epsilon, p0_action_mask
+                                p0_state, epsilon, p0_action_mask8
                             )[
                                 0
                             ]  # Get next action from agent
@@ -722,13 +750,9 @@ if __name__ == "__main__":
 
                         env.step(p0_action)  # Act in environment
                         observation, env_reward, done, truncation, _ = env.last()
-                        p0_next_state = np.moveaxis(
-                            observation["observation"], [-1], [-3]
+                        p0_next_state, p0_next_state_flipped = transform_and_flip(
+                            observation, player=0
                         )
-                        p0_next_state_flipped = np.expand_dims(
-                            np.flip(p0_next_state, 2), 0
-                        )
-                        p0_next_state = np.expand_dims(p0_next_state, 0)
 
                         if not opponent_first:
                             score += env_reward
@@ -777,23 +801,20 @@ if __name__ == "__main__":
                                 )
 
                             # Player 1"s turn
-                            p1_action_mask = observation["action_mask"]
-                            p1_state = np.moveaxis(
-                                observation["observation"], [-1], [-3]
+                            #p1_action_mask64 = np.array([int(i) for i in observation['action_mask']])
+                            p1_action_mask8 = observation["action_mask"]
+                            p1_state, p1_state_flipped = transform_and_flip(
+                                observation, player=1
                             )
-                            # Swap pieces so that the agent always sees the board from the same perspective
-                            p1_state[[0, 1], :, :] = p1_state[[0, 1], :, :]
-                            p1_state_flipped = np.expand_dims(np.flip(p1_state, 2), 0)
-                            p1_state = np.expand_dims(p1_state, 0)
 
                             if not opponent_first:
                                 if LESSON["opponent"] == "self":
                                     p1_action = opponent.getAction(
-                                        p1_state, 0, p1_action_mask
+                                        p1_state, 0, p1_action_mask8
                                     )[0]
                                 elif LESSON["opponent"] == "random":
                                     p1_action = opponent.getAction(
-                                        p1_action_mask,
+                                        p1_action_mask8,
                                         p0_action,
                                         LESSON["block_vert_coef"],
                                     )
@@ -801,7 +822,7 @@ if __name__ == "__main__":
                                     p1_action = opponent.getAction(player=1)
                             else:
                                 p1_action = agent.getAction(
-                                    p1_state, epsilon, p1_action_mask
+                                    p1_state, epsilon, p1_action_mask8
                                 )[
                                     0
                                 ]  # Get next action from agent
@@ -809,14 +830,9 @@ if __name__ == "__main__":
 
                             env.step(p1_action)  # Act in environment
                             observation, env_reward, done, truncation, _ = env.last()
-                            p1_next_state = np.moveaxis(
-                                observation["observation"], [-1], [-3]
+                            p1_next_state, p1_next_state_flipped = transform_and_flip(
+                                observation, player=1
                             )
-                            p1_next_state[[0, 1], :, :] = p1_next_state[[0, 1], :, :]
-                            p1_next_state_flipped = np.expand_dims(
-                                np.flip(p1_next_state, 2), 0
-                            )
-                            p1_next_state = np.expand_dims(p1_next_state, 0)
 
                             if opponent_first:
                                 score += env_reward
@@ -868,7 +884,6 @@ if __name__ == "__main__":
                                     ),
                                     [done, done],
                                 )
-
                         # Learn according to learning frequency
                         if (memory.counter % agent.learn_step == 0) and (
                             len(memory) >= agent.batch_size
@@ -877,7 +892,7 @@ if __name__ == "__main__":
                             # Learn according to agent"s RL algorithm
                             experiences = memory.sample(agent.batch_size)
                             agent.learn(experiences)
-
+                        
                         # Stop episode if any agents have terminated
                         if done or truncation:
                             break
@@ -887,7 +902,7 @@ if __name__ == "__main__":
                     turns_per_episode.append(turns)
                     # Save the total episode reward
                     agent.scores.append(score)
-
+                    
                     if LESSON["opponent"] == "self":
                         if (total_episodes % LESSON["opponent_upgrade"] == 0) and (
                             (idx_epi + 1) > evo_epochs
@@ -896,7 +911,8 @@ if __name__ == "__main__":
                             elite_opp.actor.eval()
                             opponent_pool.append(elite_opp)
                             opp_update_counter += 1
-
+                    print("checkpoint 2c", turns)
+                print("checkpoint 4")
                 # Update epsilon for exploration
                 epsilon = max(eps_end, epsilon * eps_decay)
 
@@ -930,7 +946,8 @@ if __name__ == "__main__":
                             score = 0
 
                             for idx_step in range(max_steps):
-                                action_mask = observation["action_mask"]
+                                #action_mask = np.array([int(i) for i in observation['action_mask']])
+                                action_mask = observation['action_mask']
                                 if player < 0:
                                     if opponent_first:
                                         if LESSON["eval_opponent"] == "random":

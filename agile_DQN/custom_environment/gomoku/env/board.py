@@ -21,8 +21,8 @@ class Board:
         while random_index1 == random_index2:
             random_index2 = random.randint(0, self.boardsize - 1)
         self.squares[random_index1] = 1
-        self.squares[random_index2] = 2'''
-
+        self.squares[random_index2] = 2
+        '''
         # precommute possible winning combinations
         self.calculate_winners()
 

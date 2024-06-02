@@ -3,21 +3,20 @@ import os
 import imageio
 import numpy as np
 import torch
-from tictactoe_mainer import Opponent
-from pettingzoo.classic import tictactoe_v3
+from gomoku_mainer import Opponent
+from custom_environment.gomoku.env import gomoku
 from PIL import Image, ImageDraw, ImageFont
 
 from agilerl.algorithms.dqn import DQN
-
 
 # Define function to return image
 def _label_with_episode_number(frame, episode_num, frame_no, p):
     im = Image.fromarray(frame)
     drawer = ImageDraw.Draw(im)
     text_color = (255, 255, 255)
-    font = ImageFont.truetype("DejaVuSerif.ttf", size=45)
+    font = ImageFont.truetype("DejaVuSerif.ttf", size=25)
     drawer.text(
-        (100, 5),
+        (100, 40),
         f"Episode: {episode_num+1}     Frame: {frame_no}",
         fill=text_color,
         font=font,
@@ -31,7 +30,7 @@ def _label_with_episode_number(frame, episode_num, frame_no, p):
     if p is None:
         player = "Self-play"
         color = (255, 255, 255)
-    drawer.text((700, 5), f"Agent: {player}", fill=color, font=font)
+    drawer.text((700, 40), f"Agent: {player}", fill=color, font=font)
     return im
 
 
@@ -46,13 +45,12 @@ def resize_frames(frames, fraction):
 
     return resized_frames
 
-
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    path = "./models/DQN/lesson2_trained_agent.pt"  # Path to saved agent checkpoint
+    path = "./models/DQN-gomoku/lesson4_trained_agent.pt"  # Path to saved agent checkpoint
 
-    env = tictactoe_v3.env(render_mode="rgb_array")
+    env = gomoku.env(render_mode="rgb_array")
     env.reset()
 
     # Configure the algo input arguments
@@ -65,7 +63,7 @@ if __name__ == "__main__":
     # Pre-process dimensions for pytorch layers
     # We will use self-play, so we only need to worry about the state dim of a single agent
     # We flatten the 6x7x2 observation as input to the agent's neural network
-    state_dim = np.zeros(state_dim[0]).flatten().shape
+    state_dim = np.moveaxis(np.zeros(state_dim[0]), [-1], [-3]).shape
     action_dim = action_dim[0]
 
     # Instantiate an DQN object
@@ -79,7 +77,7 @@ if __name__ == "__main__":
     # Load the saved algorithm into the DQN object
     dqn.loadCheckpoint(path)
 
-    for opponent_difficulty in ["random", "weak", "strong", "self"]:
+    for opponent_difficulty in ["self"]: #["random", "weak", "strong", "self"]:
         # Create opponent
         if opponent_difficulty == "self":
             opponent = dqn
@@ -87,7 +85,7 @@ if __name__ == "__main__":
             opponent = Opponent(env, opponent_difficulty)
 
         # Define test loop parameters
-        episodes = 5  # Number of episodes to test agent on
+        episodes = 2  # Number of episodes to test agent on
         max_steps = (
             500  # Max number of steps to take in the environment in each episode
         )
@@ -118,22 +116,25 @@ if __name__ == "__main__":
             player = -1  # Tracker for which player's turn it is
             score = 0
             for idx_step in range(max_steps):
-                action_mask = observation["action_mask"]
+                action_mask64 = np.array([int(i) for i in observation['action_mask']])
+                action_mask8 = observation["action_mask"]
                 if player < 0:
                     state = np.moveaxis(observation["observation"], [-1], [-3])
                     state = np.expand_dims(state, 0)
                     if opponent_first:
+                        print("player < 0, opponent first")
                         if opponent_difficulty == "self":
                             action = opponent.getAction(
-                                state, epsilon=0, action_mask=action_mask
+                                state, epsilon=0, action_mask=action_mask64
                             )[0]
                         elif opponent_difficulty == "random":
-                            action = opponent.getAction(action_mask)
+                            action = opponent.getAction(action_mask64)
                         else:
                             action = opponent.getAction(player=0)
                     else:
+                        print("player < 0, opponent second")
                         action = dqn.getAction(
-                            state, epsilon=0, action_mask=action_mask
+                            state, epsilon=0, action_mask=action_mask64
                         )[
                             0
                         ]  # Get next action from agent
@@ -144,28 +145,26 @@ if __name__ == "__main__":
                     if not opponent_first:
                         if opponent_difficulty == "self":
                             action = opponent.getAction(
-                                state, epsilon=0, action_mask=action_mask
+                                state, epsilon=0, action_mask=action_mask64
                             )[0]
                         elif opponent_difficulty == "random":
-                            action = opponent.getAction(action_mask)
+                            action = opponent.getAction(action_mask64)
                         else:
                             action = opponent.getAction(player=1)
                     else:
                         action = dqn.getAction(
-                            state, epsilon=0, action_mask=action_mask
+                            state, epsilon=0, action_mask=action_mask64
                         )[
                             0
                         ]  # Get next action from agent
                 env.step(action)  # Act in environment
                 observation, reward, termination, truncation, _ = env.last()
-                # Save the frame for this step and append to frames list
                 frame = env.render()
                 frames.append(
                     _label_with_episode_number(
                         frame, episode_num=ep, frame_no=idx_step, p=p
                     )
                 )
-
                 if (player > 0 and opponent_first) or (
                     player < 0 and not opponent_first
                 ):
@@ -184,7 +183,6 @@ if __name__ == "__main__":
             print(f"Score: {score}")
 
         print("============================================")
-
         frames = resize_frames(frames, 0.5)
 
         # Save the gif to specified path
@@ -196,5 +194,4 @@ if __name__ == "__main__":
             duration=400,
             loop=True,
         )
-
     env.close()

@@ -1,13 +1,13 @@
 ---
 # Connect Four Lesson 2
 # Train against random agent: 'random', weak opponent: 'weak', strong opponent: 'strong', or use self-play: 'self'
-opponent: weak
-opponent_pool_size:       # Size of opponent pool for self-play
-opponent_upgrade:       # Epoch frequency to update opponent pool
-eval_opponent: weak  # 'random', 'weak' or 'strong'
-pretrained_path: models/DQN-gomoku/lesson1_trained_agent.pt  # Path to pretrained model weights
-save_path: models/DQN-gomoku/lesson2_trained_agent.pt  # Path to save trained model
-max_train_episodes: 3000  # Maximum number of training episodes in environment
+opponent: self
+opponent_pool_size: 4       # Size of opponent pool for self-play
+opponent_upgrade: 25       # Epoch frequency to update opponent pool
+eval_opponent: ./models/DQN-test/lesson1_trained_agent.pt  # 'random', 'weak' or 'strong'
+pretrained_path: models/DQN-test/lesson1_trained_agent.pt  # Path to pretrained model weights
+save_path: models/DQN-gomoku2/lesson2_trained_agent.pt  # Path to save trained model
+max_train_episodes: 1250  # Maximum number of training episodes in environment
 
 ## Game specific:
 buffer_warm_up: false  # Fill replay buffer with random experiences
@@ -17,7 +17,7 @@ block_vert_coef: 1  # How many times more likely to block vertically
 rewards:  # Rewards for different outcomes
     win: 1
     vertical_win: 1
-    three_in_row: 0.02
-    opp_three_in_row: -0.02
+    three_in_row: 0.01
+    opp_three_in_row: -0.01
     lose: -1
     play_continues: 0

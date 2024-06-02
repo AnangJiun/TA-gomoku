@@ -17,5 +17,5 @@ for agent in env.agent_iter():
 
     env.step(action)
 
-print(list(mask))
-print(np.array([1 for i in range(225)]))
+print(observation["action_mask"])
+print(np.array([i for i in observation["action_mask"]]))
