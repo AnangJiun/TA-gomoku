@@ -148,11 +148,11 @@ class raw_env(AECEnv, EzPickle):
             elif winner == 1:
                 # agent 0 won
                 self.rewards[self.agents[0]] += 1
-                self.rewards[self.agents[1]] -= 1
+                self.rewards[self.agents[1]] -= 2
             else:
                 # agent 1 won
-                self.rewards[self.agents[1]] += 1
-                self.rewards[self.agents[0]] -= 1
+                self.rewards[self.agents[1]] += 3
+                self.rewards[self.agents[0]] -= 4
 
             # once either play wins or there is a draw, game over, both players are done
             self.terminations = {i: True for i in self.agents}

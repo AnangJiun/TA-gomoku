@@ -48,7 +48,11 @@ def resize_frames(frames, fraction):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    path = "./models/DQN-gomoku/lesson4_trained_agent.pt"  # Path to saved agent checkpoint
+    path = "./models/DQN-gomoku2/lesson4_trained_agent.pt"
+    path1 = "./models/DQN-gomoku2/lesson1_trained_agent.pt"  # Path to saved agent checkpoint
+    path2 = "./models/DQN-gomoku2/lesson2_trained_agent.pt"
+    path3 = "./models/DQN-gomoku2/lesson3_trained_agent.pt"
+    path4 = "./models/DQN-gomoku2/lesson4_trained_agent.pt"
 
     env = gomoku.env(render_mode="rgb_array")
     env.reset()
@@ -74,18 +78,54 @@ if __name__ == "__main__":
         device=device,
     )
 
+    dqn1 = DQN(
+        state_dim,
+        action_dim,
+        one_hot,
+        device=device,
+    )
+
+    dqn2 = DQN(
+        state_dim,
+        action_dim,
+        one_hot,
+        device=device,
+    )
+
+    dqn3 = DQN(
+        state_dim,
+        action_dim,
+        one_hot,
+        device=device,
+    )
+
+    dqn4 = DQN(
+        state_dim,
+        action_dim,
+        one_hot,
+        device=device,
+    )
+
     # Load the saved algorithm into the DQN object
     dqn.loadCheckpoint(path)
+    dqn1.loadCheckpoint(path1)
+    dqn2.loadCheckpoint(path2)
+    dqn3.loadCheckpoint(path3)
+    dqn4.loadCheckpoint(path4)
 
-    for opponent_difficulty in ["self"]: #["random", "weak", "strong", "self"]:
+    for opponent_difficulty in ["lesson1", "lesson2", "lesson3", "lesson4"]: #["random", "weak", "strong", "self"]:
         # Create opponent
-        if opponent_difficulty == "self":
-            opponent = dqn
+        if opponent_difficulty == "lesson1":
+            opponent = dqn1
+        elif opponent_difficulty == "lesson2":
+            opponent = dqn2
+        elif opponent_difficulty == "lesson3":
+            opponent = dqn3
         else:
-            opponent = Opponent(env, opponent_difficulty)
+            opponent = dqn4
 
         # Define test loop parameters
-        episodes = 2  # Number of episodes to test agent on
+        episodes = 1  # Number of episodes to test agent on
         max_steps = (
             500  # Max number of steps to take in the environment in each episode
         )
@@ -99,14 +139,9 @@ if __name__ == "__main__":
 
         # Test loop for inference
         for ep in range(episodes):
-            if ep / episodes < 0.5:
-                opponent_first = False
-                p = 1
-            else:
-                opponent_first = True
-                p = 2
-            if opponent_difficulty == "self":
-                p = None
+            opponent_first = False
+            p = None
+
             env.reset()  # Reset environment at start of episode
             frame = env.render()
             frames.append(
@@ -116,25 +151,18 @@ if __name__ == "__main__":
             player = -1  # Tracker for which player's turn it is
             score = 0
             for idx_step in range(max_steps):
-                action_mask64 = np.array([int(i) for i in observation['action_mask']])
+                #action_mask8 = np.array([int(i) for i in observation['action_mask']])
                 action_mask8 = observation["action_mask"]
                 if player < 0:
                     state = np.moveaxis(observation["observation"], [-1], [-3])
                     state = np.expand_dims(state, 0)
                     if opponent_first:
-                        print("player < 0, opponent first")
-                        if opponent_difficulty == "self":
-                            action = opponent.getAction(
-                                state, epsilon=0, action_mask=action_mask64
-                            )[0]
-                        elif opponent_difficulty == "random":
-                            action = opponent.getAction(action_mask64)
-                        else:
-                            action = opponent.getAction(player=0)
+                        action = opponent.getAction(
+                            state, epsilon=0, action_mask=action_mask8
+                        )[0]
                     else:
-                        print("player < 0, opponent second")
                         action = dqn.getAction(
-                            state, epsilon=0, action_mask=action_mask64
+                            state, epsilon=0, action_mask=action_mask8
                         )[
                             0
                         ]  # Get next action from agent
@@ -143,20 +171,16 @@ if __name__ == "__main__":
                     state[[0, 1], :, :] = state[[0, 1], :, :]
                     state = np.expand_dims(state, 0)
                     if not opponent_first:
-                        if opponent_difficulty == "self":
-                            action = opponent.getAction(
-                                state, epsilon=0, action_mask=action_mask64
-                            )[0]
-                        elif opponent_difficulty == "random":
-                            action = opponent.getAction(action_mask64)
-                        else:
-                            action = opponent.getAction(player=1)
+                        action = opponent.getAction(
+                            state, epsilon=0, action_mask=action_mask8
+                        )[0]
                     else:
                         action = dqn.getAction(
-                            state, epsilon=0, action_mask=action_mask64
+                            state, epsilon=0, action_mask=action_mask8
                         )[
                             0
                         ]  # Get next action from agent
+                
                 env.step(action)  # Act in environment
                 observation, reward, termination, truncation, _ = env.last()
                 frame = env.render()
@@ -165,6 +189,11 @@ if __name__ == "__main__":
                         frame, episode_num=ep, frame_no=idx_step, p=p
                     )
                 )
+
+                if truncation or termination:
+                    env.step(None)
+                    observation, reward, termination, truncation, _ = env.last()
+                    
                 if (player > 0 and opponent_first) or (
                     player < 0 and not opponent_first
                 ):
@@ -189,7 +218,7 @@ if __name__ == "__main__":
         gif_path = "./videos/"
         os.makedirs(gif_path, exist_ok=True)
         imageio.mimwrite(
-            os.path.join("./videos/", f"connect_four_{opponent_difficulty}_opp.gif"),
+            os.path.join("./videos/", f"gomoku_lesson4_vs_{opponent_difficulty}.gif"),
             frames,
             duration=400,
             loop=True,
